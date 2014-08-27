@@ -230,6 +230,7 @@ class Filebot
                 'fileDescription' => $awsItem['description'],
                 'fileName' => $awsItem['name'],
                 'fileURI' => $awsItem['uri'],
+                'file' => $body
             ];
         }
 
