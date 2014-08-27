@@ -1,0 +1,24 @@
+{
+    "name": "govtribe/filebot",
+    "description": "",
+    "authors": [
+        {
+            "name": "Arnob L. Alam",
+            "email": "aalam@govtribe.com"
+        }
+    ],
+    "require": {
+        "php": ">=5.4.0",
+        "illuminate/support": "4.2.*",
+        "aws/aws-sdk-php-laravel": "1.*"
+    },
+    "autoload": {
+        "classmap": [
+            "src/migrations"
+        ],
+        "psr-0": {
+            "GovTribe\\Filebot\\": "src/"
+        }
+    },
+    "minimum-stability": "stable"
+}
