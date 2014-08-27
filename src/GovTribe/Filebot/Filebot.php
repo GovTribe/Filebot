@@ -7,7 +7,8 @@ use \File;
 use Aws\Laravel\AwsFacade as AWS;
 use \Exception;
 
-class Filebot {
+class Filebot
+{
 
     /**
      * AWS s3 instance.
@@ -85,8 +86,7 @@ class Filebot {
      */
     protected function deleteWorkingPath()
     {
-        if ($this->workingPath)
-        {
+        if ($this->workingPath) {
             File::deleteDirectory($this->workingPath, false);
             $this->workingPath = null;
         }
@@ -102,12 +102,20 @@ class Filebot {
      */
     public function extractProjectAttachments($FBORootProviderGUID, $bucketName, array $files)
     {
-        if (!$FBORootProviderGUID) throw new Exception('Provide a FBORootProviderGUID');
-        if (!$bucketName) throw new Exception('Provide a s3 bucket name');
-        if (!$files) throw new Exception('Provide a a non-empty list of files');
+        if (!$FBORootProviderGUID) {
+            throw new Exception('Provide a FBORootProviderGUID');
+        }
+        if (!$bucketName) {
+            throw new Exception('Provide a s3 bucket name');
+        }
+        if (!$files) {
+            throw new Exception('Provide a a non-empty list of files');
+        }
 
         // If an existing working path exists, delete it and setup a new one
-        if ($this->workingPath) $this->setupWorkingPath();
+        if ($this->workingPath) {
+            $this->setupWorkingPath();
+        }
 
         // Remap the project's files array to make them easier to deal with, fix URI errors
         $files = $this->remapProjectFiles($files);
@@ -124,10 +132,9 @@ class Filebot {
         // Convert the files to to text or html
         $files = $this->convertBatch($files);
 
-        // If no files were downloaded, or none were successfully extracted, 
+        // If no files were downloaded, or none were successfully extracted,
         // the list of files may now be empty
-        if (!empty($files))
-        {
+        if (!empty($files)) {
             $this->saveToS3Batch($FBORootProviderGUID, $bucketName, $files);
 
             $this->log->info('Filebot::extractProjectAttachments(): saved batch to s3', [
@@ -146,22 +153,27 @@ class Filebot {
      */
     public function getProjectAttachments($FBORootProviderGUID, $bucketName)
     {
-        if (!$FBORootProviderGUID) throw new Exception('Provide a FBORootProviderGUID');
-        if (!$bucketName) throw new Exception('Provide a s3 bucket name');
+        if (!$FBORootProviderGUID) {
+            throw new Exception('Provide a FBORootProviderGUID');
+        }
+        if (!$bucketName) {
+            throw new Exception('Provide a s3 bucket name');
+        }
 
         // No files available
-        if (!$this->prefixExists($FBORootProviderGUID, $bucketName)) return [];
+        if (!$this->prefixExists($FBORootProviderGUID, $bucketName)) {
+            return [];
+        }
 
         $fileKeys = $this->s3->getIterator('ListObjects', [
             'Bucket' => $bucketName,
             'Prefix' => $FBORootProviderGUID . '/',
         ]);
 
-        $files = [];
+        $aws = [];
 
         // Get all of the project's files from s3, and return the file body and name
-        foreach ($fileKeys as $fileKey) 
-        {
+        foreach ($fileKeys as $fileKey) {
             $file = $this->s3->getObject(array(
                 'Bucket' => $bucketName,
                 'Delimiter' => '/',
@@ -169,8 +181,7 @@ class Filebot {
             ))->getAll();
 
             $sizeInBytes = $file['Body']->getSize();
-            if ($this->config->get('fboFiles.maxFetchSizeBytes') < $sizeInBytes)
-            {
+            if ($this->config->get('fboFiles.maxFetchSizeBytes') < $sizeInBytes) {
                 $this->log->info('Filebot::getProjectAttachments(): File larger than max fetch size, skipped (' . $this->formatBytes($sizeInBytes) . ' bytes)');
                 continue;
             }
@@ -180,9 +191,11 @@ class Filebot {
             $body = preg_replace('/\s+/', ' ', $body);
             $body = trim($body);
 
-            if (empty($body)) continue;
+            if (empty($body)) {
+                continue;
+            }
 
-            $files[] = [
+            $aws[] = [
                 'name' => isset($file['Metadata']['name']) ? $file['Metadata']['name'] : 'Not Available',
                 'description' => isset($file['Metadata']['description']) ? $file['Metadata']['description'] : 'Not Available',
                 'packageName' => isset($file['Metadata']['packagename']) ? $file['Metadata']['packagename'] : 'Not Available',
@@ -192,9 +205,36 @@ class Filebot {
             ];
         }
 
-        $this->log->info('Filebot::getProjectAttachments(): Finished fetching ' . count($files) . ' files from s3 for FBORootProviderGUID ' . $FBORootProviderGUID);
+        $this->log->info('Filebot::getProjectAttachments(): Finished fetching ' . count($aws) . ' files from s3 for FBORootProviderGUID ' . $FBORootProviderGUID);
 
-        return $files;
+        // Get unique package names.
+        $packageNames = [];
+        foreach ($aws as $awsItem) {
+            $packageNames[] = $awsItem['packageName'];
+        }
+        $packageNames = array_keys(array_flip($packageNames));
+
+        // Fillout tempates.
+        $toIndex = [];
+        foreach ($packageNames as $packageName) {
+            $toIndex[$packageName] = [
+                'packageDetails' => [
+            ],
+            'packageName' => $packageName,
+            ];
+        }
+
+        // Add data from AWS to template.
+        foreach ($aws as $awsItem) {
+            $toIndex[$awsItem['packageName']]['packageDetails'][] = [
+                'fileDescription' => $awsItem['description'],
+                'fileName' => $awsItem['name'],
+                'fileURI' => $awsItem['uri'],
+            ];
+        }
+
+        $toIndex = array_values($toIndex);
+        return $toIndex;
     }
 
     /**
@@ -207,15 +247,13 @@ class Filebot {
      */
     protected function saveToS3Batch($FBORootProviderGUID, $bucketName, array $files = array())
     {
-        try
-        {
+        try {
             $batch = BatchBuilder::factory()
                 ->transferCommands(10)
                 ->autoFlushAt(5)
                 ->build();
 
-            foreach ($files as $item)
-            {
+            foreach ($files as $item) {
                 $key = $FBORootProviderGUID . '/' . $item['saveAs'];
                 $opts = [
                     'Bucket' => $bucketName,
@@ -237,9 +275,7 @@ class Filebot {
             }
 
             $batch->flush();
-        }
-        catch (Exception $e)
-        {
+        } catch (Exception $e) {
             $this->log->error('Filebot::saveToS3Batch(): ' . $e->getMessage(), $opts['Metadata']);
         }
     }
@@ -250,10 +286,9 @@ class Filebot {
      * @param array $files
      * @return array
      */
-    protected function convertBatch(array $files) 
+    protected function convertBatch(array $files)
     {
-        foreach ($files as &$item)
-        {
+        foreach ($files as &$item) {
             //$this->log->info('Filebot::convertBatch: Converting file "' . $item['name'] . '"');
 
             // Try to convert the file using Tika
@@ -262,17 +297,11 @@ class Filebot {
             $item['convertOK'] = false;
 
             // Result is null
-            if (!$result)
-            {
+            if (!$result) {
                 //
-            }
-            // Result too short
-            elseif (mb_strlen($result) < 200)
-            {
-                //
-            }
-            else
-            {
+            } elseif (mb_strlen($result) < 200) {
+                // Result too short
+            } else {
                 $item['convertOK'] = true;
                 $item['extractedHTML'] = preg_replace('@\x{FFFD}@u', '_', $result);
             }
@@ -294,23 +323,20 @@ class Filebot {
         $result = null;
         $fh = fopen($path, 'r');
 
-        try
-        {
+        try {
             $ch = curl_init('http://localhost:9998/tika');
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
             curl_setopt($ch, CURLOPT_PUT, 1);
             curl_setopt($ch, CURLOPT_BINARYTRANSFER, true);
-            curl_setopt($ch, CURLOPT_HTTPHEADER, ['Accept: text/html']); 
-            curl_setopt($ch, CURLOPT_TIMEOUT, 15); 
+            curl_setopt($ch, CURLOPT_HTTPHEADER, ['Accept: text/html']);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 15);
             curl_setopt($ch, CURLOPT_INFILE, $fh);
             curl_setopt($ch, CURLOPT_INFILESIZE, File::size($path));
             $response = curl_exec($ch);
             curl_close($ch);
 
             $result = $response;
-        }
-        catch (Exception $e)
-        {
+        } catch (Exception $e) {
             $this->log->error('Filebot::convertToHTML(): ' . $e->getMessage());
             $result = null;
         }
@@ -325,21 +351,17 @@ class Filebot {
      * @param array $files
      * @return array
      */
-    protected function downloadBatch(array $files) 
+    protected function downloadBatch(array $files)
     {
-        foreach ($files as &$item)
-        {
-            $tempSavePath = $this->workingPath . '/' . rand(0,100000);
+        foreach ($files as &$item) {
+            $tempSavePath = $this->workingPath . '/' . rand(0, 100000);
             $result = $this->downloadOne($item['uri'], $tempSavePath);
 
             // Download failed...
-            if (!$result)
-            {
+            if (!$result) {
                 $item = false;
-            }
-            // Rename the file to its md5 has value
-            else
-            {
+            } else {
+                // Rename the file to its md5 has value
                 $savePath = $this->workingPath . '/' . $item['saveAs'];
                 File::move($tempSavePath, $savePath);
                 $item['md5'] = md5_file($savePath);
@@ -359,13 +381,12 @@ class Filebot {
      * @param string $savePath
      * @return bool
      */
-    protected function downloadOne($fileURL, $savePath) 
+    protected function downloadOne($fileURL, $savePath)
     {
         $result = false;
 
-        try 
-        {
-            switch (parse_url($fileURL, PHP_URL_SCHEME)) 
+        try {
+            switch (parse_url($fileURL, PHP_URL_SCHEME))
             {
                 case 'http':
                 case 'https':
@@ -382,13 +403,13 @@ class Filebot {
 
                         $response = $request->send();
 
-                        if ($response->getStatusCode() === 200) $result = true;
+                    if ($response->getStatusCode() === 200) {
+                            $result = true;
+                    }
 
                     break;
             }
-        }
-        catch (Exception $e) 
-        {
+        } catch (Exception $e) {
             $this->log->info('Filebot::downloadOne(): ' . $e->getMessage());
         }
 
@@ -406,12 +427,10 @@ class Filebot {
     protected function deDupeFileList($FBORootProviderGUID, $bucketName, array $files)
     {
         // Remove files we've already processed from the list of those to process
-        foreach ($files as &$item)
-        {
+        foreach ($files as &$item) {
             $fileKey = md5($item['uri']);
 
-            if ($this->s3->doesObjectExist($bucketName, $FBORootProviderGUID . '/' . $fileKey))
-            {
+            if ($this->s3->doesObjectExist($bucketName, $FBORootProviderGUID . '/' . $fileKey)) {
                 //$this->log->info('Filebot::deDupeFileList(): Skipped existing file "' . $item['name'] . '"');
                 $item = false;
             }
@@ -428,7 +447,7 @@ class Filebot {
      * @param string $bucketName
      * @return bool
      */
-    protected function fileExists($prefix, $fileName, $bucketName) 
+    protected function fileExists($prefix, $fileName, $bucketName)
     {
         $result = $this->s3->listObjects([
             'Bucket' => $bucketName,
@@ -436,11 +455,11 @@ class Filebot {
             'MaxKeys' => 1
         ]);
 
-        if (!$result['Contents'] && !$result['CommonPrefixes'])
-        {
+        if (!$result['Contents'] && !$result['CommonPrefixes']) {
             return false;
+        } else {
+            return true;
         }
-        else return true;
     }
 
     /**
@@ -450,7 +469,7 @@ class Filebot {
      * @param string $bucketName
      * @return bool
      */
-    protected function prefixExists($prefix, $bucketName) 
+    protected function prefixExists($prefix, $bucketName)
     {
         $result = $this->s3->listObjects([
             'Bucket' => $bucketName,
@@ -458,11 +477,11 @@ class Filebot {
             'MaxKeys' => 1
         ]);
 
-        if (!$result['Contents'] && !$result['CommonPrefixes'])
-        {
+        if (!$result['Contents'] && !$result['CommonPrefixes']) {
             return false;
+        } else {
+            return true;
         }
-        else return true;
     }
 
     /**
@@ -472,15 +491,14 @@ class Filebot {
      * @param string $bucketName
      * @return bool
      */
-    protected function deletePrefix($prefix, $bucketName) 
+    protected function deletePrefix($prefix, $bucketName)
     {
         $fileKeys = $this->s3->getIterator('ListObjects', [
             'Bucket' => $bucketName,
             'Prefix' => $prefix . '/',
         ]);
 
-        foreach ($fileKeys as $fileKey) 
-        {
+        foreach ($fileKeys as $fileKey) {
             $this->s3->deleteObject(array(
                 'Bucket' => $bucketName,
                 'Delimiter' => '/',
@@ -499,17 +517,19 @@ class Filebot {
     {
         $output = [];
 
-        foreach ($value as $packageGroup)
-        {
-            if (isset($packageGroup['packageSecure']) && $packageGroup['packageSecure'] === true) continue;
+        foreach ($value as $packageGroup) {
+            if (isset($packageGroup['packageSecure']) && $packageGroup['packageSecure'] === true) {
+                continue;
+            }
 
             $packageName = $packageGroup['packageName'];
             $packageDetails = $packageGroup;
             unset($packageDetails['packageName'], $packageDetails['packageType'], $packageDetails['packageSecure']);
 
-            foreach ($packageDetails as $item)
-            {
-                if (!isset($item['uri'])) continue;
+            foreach ($packageDetails as $item) {
+                if (!isset($item['uri'])) {
+                    continue;
+                }
 
                 // Fix an issue in file URLs that contain an ftp address
                 $item['uri'] = str_replace('https://www.fbo.govFTP://', 'ftp://', $item['uri']);
@@ -521,14 +541,21 @@ class Filebot {
                 $item['saveAs'] = md5($item['uri']);
 
                 // Provide default values for name, description and package name.
-                if (!isset($item['name'])) $item['name'] = 'Not Available';
-                if (!isset($item['description'])) $item['description'] = 'Not Available';
-                if (!isset($item['packageName'])) $item['description'] = 'Not Available';
+                if (!isset($item['name'])) {
+                    $item['name'] = 'Not Available';
+                }
+                if (!isset($item['description'])) {
+                    $item['description'] = 'Not Available';
+                }
+                if (!isset($item['packageName'])) {
+                    $item['description'] = 'Not Available';
+                }
 
                 // All s3 metadata must be saved as ASCII
-                foreach ($item as $key => &$value)
-                {
-                    if ($key == 'uri' || $key == 'saveAs') continue;
+                foreach ($item as $key => &$value) {
+                    if ($key == 'uri' || $key == 'saveAs') {
+                        continue;
+                    }
 
                     $value = $this->cleanDirtyHTML($value);
                     $value = @iconv('UTF-8', 'ASCII//IGNORE', $value);
@@ -560,13 +587,14 @@ class Filebot {
 
         $stop = implode('|', $stop);
 
-        foreach ($files as &$item)
-        {
+        foreach ($files as &$item) {
             $needle = $item['uri'] . $item['name'];
 
             $matches = preg_match_all('#' . $stop . '#', $needle);
 
-            if ($matches) $item = false;
+            if ($matches) {
+                $item = false;
+            }
         }
 
         $files = array_filter($files);
@@ -580,7 +608,7 @@ class Filebot {
      * @param  string $keepTags
      * @return string
      */
-    public function cleanDirtyHTML($string, $keepTags = '<p><br>') 
+    public function cleanDirtyHTML($string, $keepTags = '<p><br>')
     {
         mb_regex_encoding('UTF-8');
 
@@ -604,5 +632,4 @@ class Filebot {
 
         return $string;
     }
-
 }
