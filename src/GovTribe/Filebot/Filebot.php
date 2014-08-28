@@ -633,4 +633,128 @@ class Filebot
 
         return $string;
     }
+
+    /**
+     * Check if an array is multidimensional.
+     *
+     * @param array $array
+     *
+     * @return bool
+     */
+    public function isArrayMultiDim(array $array)
+    {
+        if (count($array) == count($array, COUNT_RECURSIVE)) {
+            return false;
+        } else {
+            return true;
+        }
+    }
+
+    /**
+     * Parse an html string into an XPath object.
+     *
+     * @param string $html
+     *
+     * @return DOMXpath
+     */
+    protected function getXPathFromHTML($html)
+    {
+        if (empty($html)) {
+            throw new \InvalidArgumentException;
+        }
+
+        // Set DOM
+        libxml_use_internal_errors(true);
+        $DOM = new DOMDocument('1.0', 'UTF-8');
+        $DOM->recover = true;
+        $DOM->loadHTML($html);
+        libxml_use_internal_errors(false);
+
+        // Set XPath
+        $XPath = new DOMXpath($DOM);
+
+        if (!$XPath) {
+            throw new \ErrorException('Could not build XPath from html: ' . $html);
+        } else {
+            return $XPath;
+        }
+    }
+
+    /**
+     * Extract a single item from a XPath object.
+     *
+     * @param DOMXpath
+     * @param string $selector XPath query
+     * @param bool $contextNode Provide a context node
+     * @param bool $html Get the node's html
+     *
+     * @return string
+     */
+    protected function getSingleDOMItem(DOMXpath $XPath, $selector, $contextNode = false, $html = false)
+    {
+        $nodeList = $contextNode ? $XPath->query($selector, $contextNode) : $XPath->query($selector);
+
+        if (is_object($nodeList) && $nodeList->length != 0) {
+            if ($html) {
+                $item = $nodeList->item(0);
+
+                $temp = new DOMDocument('1.0', 'UTF-8');
+                $cloned = $item->cloneNode(true);
+                $temp->appendChild($temp->importNode($cloned, true));
+
+                return $temp->saveHTML();
+
+            } else {
+                return trim($nodeList->item(0)->nodeValue);
+            }
+        } else {
+            return null;
+        }
+    }
+
+    /**
+     * Format a number of bytes as kilobytes, gigabytes, etc.
+     *
+     * @param  int $bytes
+     * @param  int $precision
+     * @return int
+     */
+    public function formatBytes($bytes, $precision = 2)
+    {
+        $units = array('B', 'KB', 'MB', 'GB', 'TB');
+
+        $bytes = max($bytes, 0);
+        $pow = floor(($bytes ? log($bytes) : 0) / log(1024));
+        $pow = min($pow, count($units) - 1);
+
+        // Uncomment one of the following alternatives
+        //$bytes /= pow(1024, $pow);
+        $bytes /= (1 << (10 * $pow));
+
+        return round($bytes, $precision) . ' ' . $units[$pow];
+    }
+
+    /**
+     * Add the ordinal suffix to numbers.
+     *
+     * @param  int $number
+     * @return string
+     */
+    public function addOrdinalNumberSuffix($number)
+    {
+        if (!in_array(($number % 100), array(11,12,13))) {
+            switch ($number % 10)
+            {
+                // Handle 1st, 2nd, 3rd
+                case 1:
+                    return $number.'st';
+                case 2:
+                    return $number.'nd';
+                case 3:
+                    return $number.'rd';
+            }
+        }
+
+        return $number.'th';
+    }
 }
