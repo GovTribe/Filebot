@@ -165,9 +165,16 @@ class Filebot
             return [];
         }
 
+        if (strpos($bucketName, '/') !== false)
+        {
+            $prefix = explode('/', $bucketName)[1] . '/' .$FBORootProviderGUID . '/';
+            $bucketName = explode('/', $bucketName)[0];
+        }
+        else $prefix = $FBORootProviderGUID . '/';
+
         $fileKeys = $this->s3->getIterator('ListObjects', [
             'Bucket' => $bucketName,
-            'Prefix' => $FBORootProviderGUID . '/',
+            'Prefix' => $prefix,
         ]);
 
         $aws = [];
@@ -194,6 +201,8 @@ class Filebot
             if (empty($body)) {
                 continue;
             }
+
+            if (isset($file['Metadata']['binary'])) continue;
 
             $aws[] = [
                 'name' => isset($file['Metadata']['name']) ? $file['Metadata']['name'] : 'Not Available',
@@ -472,6 +481,12 @@ class Filebot
      */
     protected function prefixExists($prefix, $bucketName)
     {
+        if (strpos($bucketName, '/') !== false)
+        {
+            $prefix = explode('/', $bucketName)[1] . '/' .$prefix;
+            $bucketName = explode('/', $bucketName)[0];
+        }
+
         $result = $this->s3->listObjects([
             'Bucket' => $bucketName,
             'Prefix' => $prefix . '/',
