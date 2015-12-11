@@ -186,6 +186,8 @@ class Filebot
                 'Delimiter' => '/',
                 'Key' => $fileKey['Key'],
             ))->getAll();
+            
+            if (isset($file['Metadata']['binary'])) continue;
 
             $sizeInBytes = $file['Body']->getSize();
             if ($this->config->get('fboFiles.maxFetchSizeBytes') < $sizeInBytes) {
